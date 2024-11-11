@@ -1,17 +1,14 @@
 use std::collections::HashSet;
-use std::io::{self};
+use std::io::{self, Write};
 
-// Function to validate the input (only letters and between 'A' and 'Z')
 fn validate_text(text: &str) -> bool {
-    text.chars().all(|c| c.is_alphabetic())
+    text.chars().all(|c| c.is_alphabetic() || "ăâîșț".contains(c))
 }
 
-// Function to validate the key (at least 7 characters)
 fn validate_key(key: &str) -> bool {
     key.len() >= 7 && validate_text(key)
 }
 
-// Function to remove duplicate characters from the key
 fn remove_duplicates(key: &str) -> String {
     let mut result = String::new();
     let mut seen = HashSet::new();
@@ -25,141 +22,206 @@ fn remove_duplicates(key: &str) -> String {
     result
 }
 
-// Function to create the Playfair matrix from the given key
-fn create_matrix(key: &str) -> [[char; 5]; 5] {
-    let alphabet = "ABCDEFGHIKLMNOPQRSTUVWXYZ";  // 'J' is excluded
-    let mut key_without_duplicates = remove_duplicates(key.to_uppercase().replace('J', "I").as_str());
-
+fn create_matrix(key: &str) -> Vec<Vec<char>> {
+    // Create a flexible-sized matrix to accommodate all characters
+    let mut matrix = Vec::new();
+    let mut current_row = Vec::new();
+    
+    // Process the key first
+    let key_processed = remove_duplicates(&key.to_uppercase().replace('J', "I"));
+    let mut all_chars: Vec<char> = key_processed.chars().collect();
+    
+    // Add remaining alphabet and Romanian characters
+    let alphabet = "ABCDEFGHIKLMNOPQRSTUVWXYZĂÂÎȘȚ";
     for c in alphabet.chars() {
-        if !key_without_duplicates.contains(c) {
-            key_without_duplicates.push(c);
+        if !all_chars.contains(&c) {
+            all_chars.push(c);
         }
     }
 
-    // Initialize a 5x5 matrix
-    let mut playfair_matrix = [[' '; 5]; 5];
-    let mut index = 0;
-
-    for i in 0..5 {
-        for j in 0..5 {
-            playfair_matrix[i][j] = key_without_duplicates.chars().nth(index).unwrap();
-            index += 1;
+    // Create the matrix with 5 columns
+    for (_idx, &c) in all_chars.iter().enumerate() {
+        current_row.push(c);
+        if current_row.len() == 5 {
+            matrix.push(current_row);
+            current_row = Vec::new();
         }
     }
+    
+    // Push the last row if it exists
+    if !current_row.is_empty() {
+        while current_row.len() < 5 {
+            current_row.push('X');  // Fill with X if needed
+        }
+        matrix.push(current_row);
+    }
 
-    playfair_matrix
+    matrix
 }
 
-// Function to encrypt using Playfair cipher
-fn encrypt_playfair(matrix: &[[char; 5]; 5], text: &str) -> String {
-    let mut text = text.to_uppercase().replace('J', "I"); // Replace J with I
-    if text.len() % 2 != 0 {
-        text.push('X'); // Add 'X' if the text has an odd number of characters
-    }
-
-    let mut ciphertext = String::new();
-
-    // Pair the characters and process
-    for i in 0..text.len() / 2 {
-        let a = text.chars().nth(2 * i).unwrap();
-        let b = text.chars().nth(2 * i + 1).unwrap();
-        let (x1, y1) = find_position(matrix, a);
-        let (x2, y2) = find_position(matrix, b);
-
-        if x1 == x2 {
-            // On the same row
-            ciphertext.push(matrix[x1][(y1 + 1) % 5]);
-            ciphertext.push(matrix[x2][(y2 + 1) % 5]);
-        } else if y1 == y2 {
-            // On the same column
-            ciphertext.push(matrix[(x1 + 1) % 5][y1]);
-            ciphertext.push(matrix[(x2 + 1) % 5][y2]);
-        } else {
-            // Form a rectangle
-            ciphertext.push(matrix[x1][y2]);
-            ciphertext.push(matrix[x2][y1]);
-        }
-    }
-    ciphertext
-}
-
-// Function to decrypt using Playfair cipher
-fn decrypt_playfair(matrix: &[[char; 5]; 5], text: &str) -> String {
-    let text = text.to_uppercase().replace('J', "I");
-
-    let mut decrypted_message = String::new();
-
-    // Pair the characters and process
-    for i in 0..text.len() / 2 {
-        let a = text.chars().nth(2 * i).unwrap();
-        let b = text.chars().nth(2 * i + 1).unwrap();
-        let (x1, y1) = find_position(matrix, a);
-        let (x2, y2) = find_position(matrix, b);
-
-        if x1 == x2 {
-            // On the same row
-            decrypted_message.push(matrix[x1][(y1 + 4) % 5]);
-            decrypted_message.push(matrix[x2][(y2 + 4) % 5]);
-        } else if y1 == y2 {
-            // On the same column
-            decrypted_message.push(matrix[(x1 + 4) % 5][y1]);
-            decrypted_message.push(matrix[(x2 + 4) % 5][y2]);
-        } else {
-            // Form a rectangle
-            decrypted_message.push(matrix[x1][y2]);
-            decrypted_message.push(matrix[x2][y1]);
-        }
-    }
-    decrypted_message
-}
-
-// Function to find the position of a character in the matrix
-fn find_position(matrix: &[[char; 5]; 5], c: char) -> (usize, usize) {
-    for i in 0..5 {
-        for j in 0..5 {
-            if matrix[i][j] == c {
-                return (i, j);
+fn find_position(matrix: &[Vec<char>], c: char) -> Option<(usize, usize)> {
+    for (i, row) in matrix.iter().enumerate() {
+        for (j, &matrix_char) in row.iter().enumerate() {
+            if matrix_char == c {
+                return Some((i, j));
             }
         }
     }
-    (0, 0) // Will return 0, 0 as a fallback, but this should never happen
+    None
 }
 
-fn main() {
-    let mut input = String::new();
-    println!("Enter the key (at least 7 characters): ");
-    io::stdin().read_line(&mut input).unwrap();
-    let key = input.trim();
+fn encrypt_playfair(matrix: &[Vec<char>], text: &str) -> String {
+    let text = text.to_uppercase().replace('J', "I");
+    let mut text_chars: Vec<char> = text.chars().collect();
     
-    if !validate_key(key) {
-        println!("The key must be at least 7 characters long and contain only letters!");
-        return;
+    // Add padding if necessary
+    if text_chars.len() % 2 != 0 {
+        text_chars.push('X');
     }
 
-    let matrix = create_matrix(key);
+    let mut result = String::new();
+    let rows = matrix.len();
+
+    for chunk in text_chars.chunks(2) {
+        let (c1, c2) = (chunk[0], chunk[chunk.len() - 1]);
+        
+        if let (Some((r1, c1_pos)), Some((r2, c2_pos))) = (find_position(matrix, c1), find_position(matrix, c2)) {
+            if r1 == r2 {
+                // Same row
+                result.push(matrix[r1][(c1_pos + 1) % 5]);
+                result.push(matrix[r2][(c2_pos + 1) % 5]);
+            } else if c1_pos == c2_pos {
+                // Same column
+                result.push(matrix[(r1 + 1) % rows][c1_pos]);
+                result.push(matrix[(r2 + 1) % rows][c2_pos]);
+            } else {
+                // Rectangle
+                result.push(matrix[r1][c2_pos]);
+                result.push(matrix[r2][c1_pos]);
+            }
+        } else {
+            // If character not found, append it unchanged
+            result.push(c1);
+            if chunk.len() > 1 {
+                result.push(c2);
+            }
+        }
+    }
+    result
+}
+
+fn decrypt_playfair(matrix: &[Vec<char>], text: &str) -> String {
+    let text = text.to_uppercase();
+    let mut result = String::new();
+    let rows = matrix.len();
+
+    for chunk in text.chars().collect::<Vec<char>>().chunks(2) {
+        let (c1, c2) = (chunk[0], chunk[chunk.len() - 1]);
+        
+        if let (Some((r1, c1_pos)), Some((r2, c2_pos))) = (find_position(matrix, c1), find_position(matrix, c2)) {
+            if r1 == r2 {
+                // Same row
+                result.push(matrix[r1][(c1_pos + 4) % 5]);
+                result.push(matrix[r2][(c2_pos + 4) % 5]);
+            } else if c1_pos == c2_pos {
+                // Same column
+                result.push(matrix[(r1 + rows - 1) % rows][c1_pos]);
+                result.push(matrix[(r2 + rows - 1) % rows][c2_pos]);
+            } else {
+                // Rectangle
+                result.push(matrix[r1][c2_pos]);
+                result.push(matrix[r2][c1_pos]);
+            }
+        } else {
+            // If character not found, append it unchanged
+            result.push(c1);
+            if chunk.len() > 1 {
+                result.push(c2);
+            }
+        }
+    }
+    result
+}
+
+fn get_valid_operation() -> io::Result<u32> {
+    loop {
+        print!("Choose an operation (1: Encrypt, 2: Decrypt): ");
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        
+        match input.trim().parse::<u32>() {
+            Ok(num) if num == 1 || num == 2 => return Ok(num),
+            _ => {
+                println!("Please enter either 1 for encryption or 2 for decryption.");
+                continue;
+            }
+        }
+    }
+}
+
+fn get_valid_key() -> io::Result<String> {
+    loop {
+        print!("Enter the key (at least 7 characters): ");
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let key = input.trim().to_string();
+        
+        if validate_key(&key) {
+            return Ok(key);
+        } else {
+            println!("The key must be at least 7 characters long and contain only letters (including Romanian ones)!");
+        }
+    }
+}
+
+fn get_valid_message() -> io::Result<String> {
+    loop {
+        print!("Enter the message for encryption/decryption: ");
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let message = input.trim().to_string();
+        
+        if validate_text(&message) {
+            return Ok(message);
+        } else {
+            println!("The message must contain only letters (including Romanian ones)!");
+        }
+    }
+}
+
+fn main() -> io::Result<()> {
+    println!("=== Playfair Cipher (with Romanian character support) ===\n");
     
-    println!("Choose an operation (1: Encrypt, 2: Decrypt): ");
-    input.clear();
-    io::stdin().read_line(&mut input).unwrap();
-    let operation: u32 = input.trim().parse().unwrap();
-
-    println!("Enter the message for encryption/decryption: ");
-    input.clear();
-    io::stdin().read_line(&mut input).unwrap();
-    let message = input.trim();
-
-    if !validate_text(message) {
-        println!("The message must contain only letters!");
-        return;
+    let key = get_valid_key()?;
+    let matrix = create_matrix(&key);
+    
+    // Debug: Print the matrix
+    println!("\nPlayfair Matrix:");
+    for row in &matrix {
+        println!("{:?}", row);
     }
-
-    if operation == 1 {
-        let ciphertext = encrypt_playfair(&matrix, message);
-        println!("Ciphertext: {}", ciphertext);
-    } else if operation == 2 {
-        let decrypted_message = decrypt_playfair(&matrix, message);
-        println!("Decrypted message: {}", decrypted_message);
-    } else {
-        println!("Invalid option!");
+    println!();
+    
+    let operation = get_valid_operation()?;
+    let message = get_valid_message()?;
+    
+    match operation {
+        1 => {
+            let ciphertext = encrypt_playfair(&matrix, &message);
+            println!("\nEncrypted text: {}", ciphertext);
+        },
+        2 => {
+            let decrypted_message = decrypt_playfair(&matrix, &message);
+            println!("\nDecrypted message: {}", decrypted_message);
+        },
+        _ => unreachable!()
     }
+    
+    Ok(())
 }
